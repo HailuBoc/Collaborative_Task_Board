@@ -1,52 +1,66 @@
-import sqlite3
-import os
+import psycopg2
+from psycopg2 import sql
 from contextlib import contextmanager
+import os
+from dotenv import load_dotenv
 
-DATABASE_PATH = "tasks.db"
+load_dotenv()
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://neondb_owner:password@ep-nameless-wave-am80yc5s-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+)
 
 
 def init_db():
     """Initialize database with tables"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
+    # Create users table
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL
+            id VARCHAR(36) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL
         )
-    """
-    )
+    """)
 
-    cursor.execute(
-        """
+    # Create tasks table
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'TODO',
-            assigned_to TEXT,
-            updated_at TEXT NOT NULL,
+            id VARCHAR(36) PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'TODO',
+            assigned_to VARCHAR(36),
+            updated_at TIMESTAMP NOT NULL,
             version INTEGER NOT NULL DEFAULT 1,
-            FOREIGN KEY (assigned_to) REFERENCES users(id)
+            FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
         )
-    """
-    )
+    """)
 
     conn.commit()
+    cursor.close()
     conn.close()
 
 
 @contextmanager
 def get_db():
     """Get database connection"""
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.set_session(autocommit=False)
+    
+    # Create a cursor with row factory-like behavior
+    cursor = conn.cursor()
+    
     try:
         yield conn
     finally:
+        cursor.close()
         conn.close()
 
 
 # Initialize on import
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"Database initialization error: {e}")

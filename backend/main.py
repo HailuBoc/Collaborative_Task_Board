@@ -1,12 +1,12 @@
 """
 Collaborative Task Board API - Starlette Backend
-Core Tech: Starlette (FastAPI's foundation) + SQLite
+Core Tech: Starlette (FastAPI's foundation) + PostgreSQL
 Implements: Polling-based sync + Optimistic concurrency control
 """
 
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
-from starlette.routing import Route, Mount
+from starlette.routing import Route
 from starlette.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uuid
@@ -18,20 +18,20 @@ from database import get_db
 def serialize_task(row):
     """Convert database row to dict"""
     return {
-        "id": row["id"],
-        "title": row["title"],
-        "status": row["status"],
-        "assigned_to": row["assigned_to"],
-        "updated_at": row["updated_at"],
-        "version": row["version"],
+        "id": row[0],
+        "title": row[1],
+        "status": row[2],
+        "assigned_to": row[3],
+        "updated_at": row[4].isoformat() if row[4] else None,
+        "version": row[5],
     }
 
 
 def serialize_user(row):
     """Convert database row to dict"""
     return {
-        "id": row["id"],
-        "name": row["name"],
+        "id": row[0],
+        "name": row[1],
     }
 
 
@@ -47,10 +47,14 @@ async def create_user(request):
         user_id = str(uuid.uuid4())
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, data["name"]))
+            cursor.execute(
+                "INSERT INTO users (id, name) VALUES (%s, %s)",
+                (user_id, data["name"])
+            )
             conn.commit()
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
             user = cursor.fetchone()
+            cursor.close()
             return JSONResponse(serialize_user(user), status_code=201)
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -63,6 +67,7 @@ async def get_users(request):
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users")
             users = cursor.fetchall()
+            cursor.close()
             return JSONResponse([serialize_user(u) for u in users])
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -78,13 +83,13 @@ async def create_task(request):
             return JSONResponse({"detail": "Title is required"}, status_code=400)
 
         task_id = str(uuid.uuid4())
-        now = datetime.now().isoformat()
+        now = datetime.utcnow()
 
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO tasks (id, title, status, assigned_to, updated_at, version)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     task_id,
                     data["title"],
@@ -95,8 +100,9 @@ async def create_task(request):
                 ),
             )
             conn.commit()
-            cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
             task = cursor.fetchone()
+            cursor.close()
             return JSONResponse(serialize_task(task), status_code=201)
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -107,8 +113,9 @@ async def get_tasks(request):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM tasks")
+            cursor.execute("SELECT * FROM tasks ORDER BY updated_at DESC")
             tasks = cursor.fetchall()
+            cursor.close()
             return JSONResponse([serialize_task(t) for t in tasks])
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -135,38 +142,41 @@ async def update_task(request):
             cursor = conn.cursor()
             
             # Get current task
-            cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
             task = cursor.fetchone()
 
             if not task:
+                cursor.close()
                 return JSONResponse({"detail": "Task not found"}, status_code=404)
 
             # Optimistic concurrency control - check version
-            if task["version"] != data["version"]:
+            if task[5] != data["version"]:  # task[5] is version
+                cursor.close()
                 return JSONResponse(
                     {
-                        "detail": f"Conflict: Task version mismatch. Expected {task['version']}, got {data['version']}",
+                        "detail": f"Conflict: Task version mismatch. Expected {task[5]}, got {data['version']}",
                         "latest_task": serialize_task(task),
                     },
                     status_code=409,
                 )
 
             # Update fields
-            title = data.get("title", task["title"])
-            status = data.get("status", task["status"])
-            assigned_to = data.get("assigned_to", task["assigned_to"])
-            new_version = task["version"] + 1
-            now = datetime.now().isoformat()
+            title = data.get("title", task[1])
+            status = data.get("status", task[2])
+            assigned_to = data.get("assigned_to", task[3])
+            new_version = task[5] + 1
+            now = datetime.utcnow()
 
             cursor.execute(
-                """UPDATE tasks SET title = ?, status = ?, assigned_to = ?, version = ?, updated_at = ?
-                   WHERE id = ?""",
+                """UPDATE tasks SET title = %s, status = %s, assigned_to = %s, version = %s, updated_at = %s
+                   WHERE id = %s""",
                 (title, status, assigned_to, new_version, now, task_id),
             )
             conn.commit()
 
-            cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
             updated_task = cursor.fetchone()
+            cursor.close()
             return JSONResponse(serialize_task(updated_task))
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
@@ -179,14 +189,16 @@ async def delete_task(request):
         
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
+            cursor.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
             task = cursor.fetchone()
 
             if not task:
+                cursor.close()
                 return JSONResponse({"detail": "Task not found"}, status_code=404)
 
-            cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
             conn.commit()
+            cursor.close()
             return JSONResponse({"message": "Task deleted"})
     except Exception as e:
         return JSONResponse({"detail": str(e)}, status_code=400)
