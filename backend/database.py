@@ -1,5 +1,4 @@
 import psycopg2
-from psycopg2 import sql
 from contextlib import contextmanager
 import os
 from dotenv import load_dotenv
@@ -13,12 +12,11 @@ if not DATABASE_URL:
 
 
 def init_db():
-    """Initialize database with tables"""
+    """Initialize database with tables - called on first request"""
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
 
-        # Create users table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(36) PRIMARY KEY,
@@ -26,7 +24,6 @@ def init_db():
             )
         """)
 
-        # Create tasks table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id VARCHAR(36) PRIMARY KEY,
@@ -42,26 +39,15 @@ def init_db():
         conn.commit()
         cursor.close()
         conn.close()
-        print("✓ Database initialized successfully")
     except Exception as e:
-        print(f"✗ Database initialization error: {e}")
-        raise
+        print(f"Database init error: {e}")
 
 
 @contextmanager
 def get_db():
     """Get database connection"""
     conn = psycopg2.connect(DATABASE_URL)
-    conn.set_session(autocommit=False)
-    
     try:
         yield conn
     finally:
         conn.close()
-
-
-# Initialize on import
-try:
-    init_db()
-except Exception as e:
-    print(f"Warning: Database initialization failed: {e}")

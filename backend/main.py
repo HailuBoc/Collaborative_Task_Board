@@ -1,18 +1,17 @@
-"""
-Collaborative Task Board API - Starlette Backend
-Core Tech: Starlette (FastAPI's foundation) + PostgreSQL
-Implements: Polling-based sync + Optimistic concurrency control
-"""
-
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.middleware.cors import CORSMiddleware
 from datetime import datetime
 import uuid
-import json
 
-from database import get_db
+from database import get_db, init_db
+
+# Initialize database on startup
+try:
+    init_db()
+except Exception as e:
+    print(f"Warning: Database init failed: {e}")
 
 
 def serialize_task(row):
@@ -235,7 +234,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:3000",
-        "https://collaborative-task-board.vercel.app",
+        "https://collaborative-task-board-two.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
