@@ -55,26 +55,89 @@ npm run dev
 
 Frontend runs on `http://localhost:5173`
 
-## 📚 Documentation
+## 🏗 Architecture & System Design
 
-- [DEPLOY.md](./DEPLOY.md) - Production deployment guide
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - System design and architecture
-- [CONTRIBUTING.md](./CONTRIBUTING.md) - Contributing guidelines
+### System Architecture
 
-## 🔄 How It Works
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Frontend (React + TypeScript)            │
+│  - Task management UI                                        │
+│  - User assignment interface                                 │
+│  - Polling-based sync (3s interval)                          │
+│  - Optimistic UI updates                                     │
+└────────────────────┬────────────────────────────────────────┘
+                     │ HTTP/REST API
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│              Backend (Starlette + Uvicorn)                   │
+│  - RESTful API endpoints                                     │
+│  - Conflict resolution (version-based OCC)                   │
+│  - CORS middleware                                           │
+│  - Database connection pooling                               │
+└────────────────────┬────────────────────────────────────────┘
+                     │ SQL Queries
+                     │
+┌────────────────────▼────────────────────────────────────────┐
+│            Database (PostgreSQL via Neon)                    │
+│  - Users table                                               │
+│  - Tasks table with versioning                               │
+│  - Foreign key relationships                                 │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Polling Sync
-Every 3 seconds, the frontend fetches the latest tasks from the backend and merges changes with local state.
+### Data Flow Diagrams
 
-### Conflict Resolution
-Uses **Optimistic Concurrency Control (OCC)**:
-- Each task has a version number
-- Updates include the current version
-- Server rejects mismatched versions with 409 Conflict
-- Client receives latest data and retries
+#### Create Task
+```
+User Input → Frontend → POST /tasks → Backend → Database → Response → UI Update
+```
 
-### Optimistic Updates
-UI updates immediately on user action, then syncs with server. If conflict occurs, UI reconciles automatically.
+#### Update Task (with Conflict Resolution)
+```
+User Edit → Frontend (optimistic update) → PUT /tasks/{id} → Backend
+  ↓
+Check version match
+  ├─ Match: Update DB, increment version, return 200
+  └─ Mismatch: Return 409 with latest data → Frontend reconciles
+```
+
+#### Polling Sync
+```
+Every 3 seconds:
+Frontend → GET /tasks → Backend → Database → Return all tasks → Merge with local state
+```
+
+## 🔄 Conflict Handling Approach
+
+The application uses **Optimistic Concurrency Control (OCC)** to handle concurrent updates:
+
+### How It Works
+
+1. **Version Tracking**: Each task has a `version` number that increments with every update
+2. **Optimistic Updates**: UI updates immediately when user makes changes (before server confirmation)
+3. **Version Validation**: When sending updates to server, client includes the current version number
+4. **Server Validation**:
+   - If version matches: Update succeeds, version increments, return 200 OK
+   - If version mismatch: Conflict detected, return 409 Conflict with latest task data
+5. **Conflict Resolution**: When conflict occurs, frontend receives latest data and automatically reconciles
+
+### Example Scenario
+
+```
+Time 1: User A fetches task (version: 1)
+Time 2: User B fetches same task (version: 1)
+Time 3: User A updates task → Server accepts (version: 2)
+Time 4: User B tries to update with version: 1 → Server rejects with 409
+Time 5: User B receives latest task (version: 2) and can retry update
+```
+
+### Benefits
+
+- **No Lost Updates**: Version mismatch prevents overwriting concurrent changes
+- **Optimistic UX**: UI feels responsive with immediate updates
+- **Automatic Reconciliation**: Conflicts are detected and resolved automatically
+- **Scalable**: Works well with polling-based sync without requiring WebSockets
 
 ## 📁 Project Structure
 
@@ -100,9 +163,6 @@ UI updates immediately on user action, then syncs with server. If conflict occur
 │   ├── vite.config.ts       # Vite configuration
 │   ├── tsconfig.json        # TypeScript config
 │   └── .env.example         # Environment variables template
-├── DEPLOY.md                # Deployment instructions
-├── ARCHITECTURE.md          # System architecture
-├── CONTRIBUTING.md          # Contributing guide
 └── README.md                # This file
 ```
 
@@ -124,23 +184,35 @@ UI updates immediately on user action, then syncs with server. If conflict occur
 ## 🚢 Deployment
 
 ### Backend (Render)
-1. Push code to GitHub
-2. Connect repository to Render
-3. Set root directory to `backend`
-4. Add `DATABASE_URL` environment variable
-5. Deploy
+
+1. Go to https://render.com
+2. Click **"New +"** → **"Web Service"**
+3. Connect your GitHub repository
+4. Configure:
+   - **Name**: `collaborative-task-board-api`
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `gunicorn -w 2 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT`
+   - **Root Directory**: `backend`
+5. Add environment variable:
+   - **Key**: `DATABASE_URL`
+   - **Value**: Your Neon PostgreSQL connection string
+6. Deploy
 
 ### Frontend (Vercel)
-1. Push code to GitHub
-2. Import repository to Vercel
-3. Set root directory to `frontend`
-4. Deploy
 
-See [DEPLOY.md](./DEPLOY.md) for detailed instructions.
+1. Update `frontend/.env.production` with your backend URL
+2. Go to https://vercel.com
+3. Import your GitHub repository
+4. Configure:
+   - **Root Directory**: `frontend`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+5. Deploy
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Feel free to fork, make changes, and submit pull requests.
 
 ## 📝 License
 
