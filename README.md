@@ -37,12 +37,15 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your DATABASE_URL
 python main.py
 ```
 
-Backend runs on `http://localhost:8000`
+Backend runs on `http://localhost:8001`
+
+**Note**: For local development, the backend uses SQLite by default. To use PostgreSQL, create a `.env` file with:
+```
+DATABASE_URL=postgresql://user:password@host:5432/database?sslmode=require
+```
 
 ### Frontend Setup
 
