@@ -64,6 +64,7 @@ export default function App() {
       await fetchUsers();
       showMessage('User created successfully', 'success');
     } catch (error) {
+      console.error('Create user error:', error);
       showMessage('Failed to create user', 'error');
     }
   };
@@ -78,6 +79,7 @@ export default function App() {
       await fetchTasks();
       showMessage('Task created successfully', 'success');
     } catch (error) {
+      console.error('Create task error:', error);
       showMessage('Failed to create task', 'error');
     }
   };

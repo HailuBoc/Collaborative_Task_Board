@@ -10,8 +10,6 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: str
     name: str
-
-
 class TaskCreate(BaseModel):
     title: str
     status: str = "TODO"
