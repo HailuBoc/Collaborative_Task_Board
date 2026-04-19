@@ -231,25 +231,33 @@ async def health_check(request):
     return JSONResponse({"status": "ok", "service": "Collaborative Task Board API"})
 
 
+async def options_handler(request):
+    """Handle CORS preflight requests"""
+    return JSONResponse({}, status_code=200)
+
+
 # ============ Routes ============
 
 routes = [
     # Users
     Route("/users", create_user, methods=["POST"]),
     Route("/users", get_users, methods=["GET"]),
+    Route("/users", options_handler, methods=["OPTIONS"]),
     # Tasks
     Route("/tasks", create_task, methods=["POST"]),
     Route("/tasks", get_tasks, methods=["GET"]),
+    Route("/tasks", options_handler, methods=["OPTIONS"]),
     Route("/tasks/{task_id}", update_task, methods=["PUT"]),
     Route("/tasks/{task_id}", delete_task, methods=["DELETE"]),
+    Route("/tasks/{task_id}", options_handler, methods=["OPTIONS"]),
     # Health
     Route("/health", health_check, methods=["GET"]),
 ]
 
-# Create app
+# Create app with CORS middleware first
 app = Starlette(routes=routes)
 
-# Add CORS middleware
+# Add CORS middleware BEFORE other middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -259,10 +267,12 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "https://collaborative-task-board-two.vercel.app",
         "https://collaborative-task-board.vercel.app",
+        "*",  # Allow all origins as fallback
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    max_age=3600,
 )
 
 

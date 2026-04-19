@@ -26,22 +26,16 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // 10 second timeout
 });
 
-// Add request interceptor for debugging
-api.interceptors.request.use((config) => {
-  console.log('API Request:', config.method?.toUpperCase(), config.url, config.data);
-  return config;
-});
-
-// Add response interceptor for debugging
+// Add response interceptor for error handling only
 api.interceptors.response.use(
-  (response) => {
-    console.log('API Response:', response.status, response.data);
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.status, error.response?.data, error.message);
+    if (error.response?.status !== 409) {
+      console.error('API Error:', error.response?.status, error.message);
+    }
     return Promise.reject(error);
   }
 );

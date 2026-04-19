@@ -45,11 +45,11 @@ export default function App() {
     fetchUsers();
   }, [fetchTasks, fetchUsers]);
 
-  // Polling sync every 3 seconds
+  // Polling sync every 5 seconds (reduced frequency for better UX)
   useEffect(() => {
     const interval = setInterval(() => {
       fetchTasks();
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, [fetchTasks]);
@@ -59,12 +59,11 @@ export default function App() {
     if (!newUserName.trim()) return;
 
     try {
-      await userAPI.create(newUserName);
+      const response = await userAPI.create(newUserName);
       setNewUserName('');
-      await fetchUsers();
+      setUsers((prev) => [...prev, response.data]);
       showMessage('User created successfully', 'success');
     } catch (error) {
-      console.error('Create user error:', error);
       showMessage('Failed to create user', 'error');
     }
   };
@@ -74,12 +73,11 @@ export default function App() {
     if (!newTaskTitle.trim()) return;
 
     try {
-      await taskAPI.create(newTaskTitle);
+      const response = await taskAPI.create(newTaskTitle);
       setNewTaskTitle('');
-      await fetchTasks();
+      setTasks((prev) => [response.data, ...prev]);
       showMessage('Task created successfully', 'success');
     } catch (error) {
-      console.error('Create task error:', error);
       showMessage('Failed to create task', 'error');
     }
   };
@@ -115,7 +113,7 @@ export default function App() {
       if (isConflictError(error)) {
         const conflictData = getConflictData(error);
         if (conflictData) {
-          // Revert to latest data
+          // Update local state with latest data
           setTasks((prev) =>
             prev.map((t) =>
               t.id === editingTask.id
@@ -123,8 +121,12 @@ export default function App() {
                 : t
             )
           );
-          showMessage('Conflict detected: Task was modified. Reverted to latest version.', 'error');
-          setEditingTask(null);
+          // Update edit form with latest data
+          setEditingTask(conflictData.latest_task);
+          setEditTitle(conflictData.latest_task.title);
+          setEditStatus(conflictData.latest_task.status);
+          setEditAssignedTo(conflictData.latest_task.assigned_to || '');
+          showMessage('Task was modified by another user. Updated to latest version.', 'error');
         }
       } else {
         showMessage('Failed to update task', 'error');
